@@ -1,0 +1,860 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="utf-8">
+
+<meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+>
+
+<title></title>
+
+<style>
+
+/* =========================================================
+   BASIC PDF VIEWER
+========================================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    width: 100%;
+    min-height: 100%;
+    overflow-x: hidden;
+}
+
+#viewer {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.page {
+    position: relative;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    line-height: 0;
+    background: #fff;
+}
+
+.page canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 0;
+}
+
+
+/* =========================================================
+   PDF LINKS
+========================================================= */
+
+.links {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.links a {
+    position: absolute;
+    display: block;
+    pointer-events: auto;
+    background: transparent;
+}
+
+.links a:hover {
+    background: rgba(0,0,0,.03);
+}
+
+
+/* =========================================================
+   MUSIC CONTROL
+========================================================= */
+
+#musicControl {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    width: 80px;
+    height: 80px;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+
+/* =========================================================
+   ROTATING LATEST BANGER IMAGE
+========================================================= */
+
+#bangerText {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 80px;
+    height: 80px;
+    transform:
+        translate(-50%, -50%);
+    object-fit: contain;
+    animation:
+        rotateBanger
+        10s
+        linear
+        infinite;
+    pointer-events: none;
+    z-index: 1;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+
+/* =========================================================
+   ROTATION
+========================================================= */
+
+@keyframes rotateBanger {
+
+    from {
+        transform:
+            translate(-50%, -50%)
+            rotate(0deg);
+    }
+
+    to {
+        transform:
+            translate(-50%, -50%)
+            rotate(360deg);
+    }
+
+}
+
+
+/* =========================================================
+   CENTER MUSIC BUTTON
+========================================================= */
+
+#musicButton {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform:
+        translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background:
+        rgba(0,0,0,.84);
+    color: #fff;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+    z-index: 2;
+    box-shadow:
+        0 4px 15px
+        rgba(0,0,0,.20);
+    transition:
+        transform .15s ease,
+        background .15s ease;
+}
+
+
+/* =========================================================
+   BUTTON HOVER
+========================================================= */
+
+#musicButton:hover {
+    transform:
+        translate(-50%, -50%)
+        scale(1.07);
+
+    background:
+        rgba(0,0,0,.92);
+}
+
+
+/* =========================================================
+   BUTTON ACTIVE
+========================================================= */
+
+#musicButton:active {
+    transform:
+        translate(-50%, -50%)
+        scale(.96);
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 600px) {
+
+    #musicControl {
+        right: 10px;
+        bottom: 10px;
+        width: 105px;
+        height: 105px;
+    }
+
+    #bangerText {
+        width: 80px;
+        height: 80px;
+    }
+
+    #musicButton {
+        width: 42px;
+        height: 42px;
+        font-size: 17px;
+    }
+
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<!-- =======================================================
+     PDF VIEWER
+======================================================= -->
+
+<div id="viewer"></div>
+
+
+<!-- =======================================================
+     BACKGROUND MUSIC
+
+     Required file:
+     assets/music.mp3
+======================================================= -->
+
+<audio
+    id="backgroundMusic"
+    loop
+    preload="auto"
+>
+
+    <source
+        src="./assets/music.mp3"
+        type="audio/mpeg"
+    >
+
+</audio>
+
+
+<!-- =======================================================
+     MUSIC CONTROL
+======================================================= -->
+
+<div id="musicControl">
+
+    <!--
+        Your curved LATEST BANGER image.
+        This rotates continuously behind
+        the music button.
+    -->
+
+    <img
+        id="bangerText"
+        src="./assets/latest-banger.png"
+        alt=""
+        draggable="false"
+    >
+
+
+    <!--
+        Stationary music button.
+    -->
+
+    <button
+        id="musicButton"
+        type="button"
+        aria-label="Play music"
+    >
+        🔇
+    </button>
+
+</div>
+
+
+<script type="module">
+
+
+/* =========================================================
+   PDF.JS
+========================================================= */
+
+import * as pdfjsLib from
+    "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs";
+
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.mjs";
+
+
+/* =========================================================
+   PDF VIEWER
+========================================================= */
+
+const viewer =
+    document.getElementById(
+        "viewer"
+    );
+
+
+/* =========================================================
+   DEVICE DETECTION
+=========================================================
+
+   MOBILE:
+   max-width: 600px
+   → mobile.pdf
+
+   DESKTOP + IPAD:
+   above 600px
+   → desktop.pdf
+
+========================================================= */
+
+const isMobile =
+    window.matchMedia(
+        "(max-width: 600px)"
+    ).matches;
+
+
+const pdfFile =
+    isMobile
+        ? "./mobile.pdf"
+        : "./desktop.pdf";
+
+
+/* =========================================================
+   LOAD CORRECT PDF
+========================================================= */
+
+const pdf =
+    await pdfjsLib.getDocument({
+        url: pdfFile
+    }).promise;
+
+
+/* =========================================================
+   RENDER ALL PDF PAGES
+========================================================= */
+
+for (
+    let pageNumber = 1;
+    pageNumber <= pdf.numPages;
+    pageNumber++
+) {
+
+    const page =
+        await pdf.getPage(
+            pageNumber
+        );
+
+
+    /* =====================================================
+       ORIGINAL PAGE SIZE
+    ===================================================== */
+
+    const baseViewport =
+        page.getViewport({
+            scale: 1
+        });
+
+
+    /* =====================================================
+       PAGE CONTAINER
+    ===================================================== */
+
+    const pageBox =
+        document.createElement(
+            "div"
+        );
+
+    pageBox.className =
+        "page";
+
+
+    /* =====================================================
+       CANVAS
+    ===================================================== */
+
+    const canvas =
+        document.createElement(
+            "canvas"
+        );
+
+
+    const ctx =
+        canvas.getContext(
+            "2d"
+        );
+
+
+    /* =====================================================
+       HIGH RESOLUTION
+    ===================================================== */
+
+    const dpr =
+        Math.min(
+            window.devicePixelRatio || 1,
+            2
+        );
+
+
+    const renderScale =
+        2 * dpr;
+
+
+    const renderViewport =
+        page.getViewport({
+            scale:
+                renderScale
+        });
+
+
+    canvas.width =
+        Math.ceil(
+            renderViewport.width
+        );
+
+
+    canvas.height =
+        Math.ceil(
+            renderViewport.height
+        );
+
+
+    canvas.style.aspectRatio =
+        `${baseViewport.width} / ${baseViewport.height}`;
+
+
+    pageBox.appendChild(
+        canvas
+    );
+
+
+    /* =====================================================
+       PDF LINKS
+    ===================================================== */
+
+    const links =
+        document.createElement(
+            "div"
+        );
+
+    links.className =
+        "links";
+
+
+    const annotations =
+        await page.getAnnotations({
+            intent:
+                "display"
+        });
+
+
+    for (
+        const ann of annotations
+    ) {
+
+        if (
+            ann.subtype !== "Link"
+        ) {
+            continue;
+        }
+
+
+        let href = null;
+
+
+        if (
+            ann.url
+        ) {
+
+            href =
+                ann.url;
+
+        }
+
+        else if (
+            ann.unsafeUrl
+        ) {
+
+            href =
+                ann.unsafeUrl;
+
+        }
+
+
+        if (!href) {
+            continue;
+        }
+
+
+        const [
+            x1,
+            y1,
+            x2,
+            y2
+        ] =
+            ann.rect;
+
+
+        const view =
+            page.getViewport({
+                scale: 1
+            });
+
+
+        /* =================================================
+           PDF COORDINATES → BROWSER COORDINATES
+        ================================================= */
+
+        const left =
+            Math.min(
+                x1,
+                x2
+            );
+
+
+        const right =
+            Math.max(
+                x1,
+                x2
+            );
+
+
+        const top =
+            view.height -
+            Math.max(
+                y1,
+                y2
+            );
+
+
+        const bottom =
+            view.height -
+            Math.min(
+                y1,
+                y2
+            );
+
+
+        /* =================================================
+           TRANSPARENT HTML LINK
+        ================================================= */
+
+        const a =
+            document.createElement(
+                "a"
+            );
+
+
+        a.href =
+            href;
+
+
+        a.target =
+            "_blank";
+
+
+        a.rel =
+            "noopener noreferrer";
+
+
+        a.setAttribute(
+            "aria-label",
+            "PDF link"
+        );
+
+
+        a.style.left =
+            (
+                left /
+                view.width *
+                100
+            ) + "%";
+
+
+        a.style.top =
+            (
+                top /
+                view.height *
+                100
+            ) + "%";
+
+
+        a.style.width =
+            (
+                (right - left) /
+                view.width *
+                100
+            ) + "%";
+
+
+        a.style.height =
+            (
+                (bottom - top) /
+                view.height *
+                100
+            ) + "%";
+
+
+        links.appendChild(
+            a
+        );
+
+    }
+
+
+    pageBox.appendChild(
+        links
+    );
+
+
+    viewer.appendChild(
+        pageBox
+    );
+
+
+    /* =====================================================
+       RENDER PDF PAGE
+    ===================================================== */
+
+    await page.render({
+
+        canvasContext:
+            ctx,
+
+        viewport:
+            renderViewport
+
+    }).promise;
+
+}
+
+
+/* =========================================================
+   MUSIC
+========================================================= */
+
+const music =
+    document.getElementById(
+        "backgroundMusic"
+    );
+
+
+const musicButton =
+    document.getElementById(
+        "musicButton"
+    );
+
+
+/* =========================================================
+   MUSIC VOLUME
+========================================================= */
+
+music.volume = 0.30;
+
+
+/* =========================================================
+   UPDATE BUTTON
+========================================================= */
+
+function updateMusicButton() {
+
+    if (
+        music.paused
+    ) {
+
+        musicButton.textContent =
+            "🔇";
+
+        musicButton.setAttribute(
+            "aria-label",
+            "Play music"
+        );
+
+    }
+
+    else {
+
+        musicButton.textContent =
+            "🔊";
+
+        musicButton.setAttribute(
+            "aria-label",
+            "Mute music"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   PLAY MUSIC
+========================================================= */
+
+async function playMusic() {
+
+    try {
+
+        await music.play();
+
+        updateMusicButton();
+
+    }
+
+    catch (error) {
+
+        /*
+            Browsers may block audible
+            autoplay.
+
+            The user can click the
+            center button manually.
+        */
+
+        console.log(
+            "Autoplay blocked. User interaction required."
+        );
+
+        updateMusicButton();
+
+    }
+
+}
+
+
+/* =========================================================
+   MUSIC BUTTON
+========================================================= */
+
+musicButton.addEventListener(
+    "click",
+    async () => {
+
+        if (
+            music.paused
+        ) {
+
+            await playMusic();
+
+        }
+
+        else {
+
+            music.pause();
+
+            updateMusicButton();
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   TRY AUTOPLAY
+========================================================= */
+
+playMusic();
+
+
+/* =========================================================
+   FIRST USER INTERACTION
+========================================================= */
+
+document.addEventListener(
+    "pointerdown",
+    async () => {
+
+        if (
+            music.paused
+        ) {
+
+            await playMusic();
+
+        }
+
+    },
+    {
+        once: true
+    }
+);
+
+
+/* =========================================================
+   INITIAL STATE
+========================================================= */
+
+updateMusicButton();
+
+
+/* =========================================================
+   MUSIC ERROR
+========================================================= */
+
+music.addEventListener(
+    "error",
+    () => {
+
+        console.error(
+            "Could not load ./assets/music.mp3"
+        );
+
+    }
+);
+
+
+/* =========================================================
+   IMAGE ERROR
+========================================================= */
+
+const bangerText =
+    document.getElementById(
+        "bangerText"
+    );
+
+
+bangerText.addEventListener(
+    "error",
+    () => {
+
+        console.error(
+            "Could not load ./assets/latest-banger.png"
+        );
+
+    }
+);
+
+
+</script>
+
+
+</body>
+
+</html>
